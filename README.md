@@ -12,7 +12,7 @@ The program models a simplified floating-point processor with:
 - a small hard-coded data memory
 - an instruction queue read from standard input
 
-It advances the simulation cycle by cycle and prints the internal machine state after each cycle.
+It advances the simulation cycle by cycle and prints a trace of what happened in each cycle.
 
 When more than one unit is ready to write back, the simulator now uses instruction issue order to choose the oldest ready result first.
 
@@ -88,8 +88,15 @@ The simulator validates:
 - registers: `F1` through `F16`
 - memory addresses: `0` through `100`
 - instruction formats and supported operation names
+- `L.D` reads only initialized memory addresses
+- arithmetic instructions read only registers that already have a value or are produced by an earlier accepted instruction
+- `S.D` stores only registers that already have a value or are produced by an earlier accepted instruction
 
 Invalid instruction lines are skipped with a message, and valid instructions continue to run.
+
+The simulator also prevents a load from passing an older pending store to the same memory address.
+
+At runtime, division by zero is reported in the trace and the destination receives `NaN` instead of crashing the simulator.
 
 ## Sample Input
 
@@ -121,7 +128,7 @@ This smaller input terminates successfully:
 printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 0\n' | java -cp src Main
 ```
 
-The simulator prints compact tables after every cycle. A shortened excerpt from the final cycle looks like this:
+The simulator prints a per-cycle trace. A shortened excerpt looks like this:
 
 ```text
 Enter addSub Reservation station size:
@@ -134,18 +141,16 @@ Enter mul latency:
 Enter div latency:
 ///////////////////Write code///////////////////
 
-=== Cycle 3 ===
-Load Buffers
-Tag  Busy  Addr    Left  Ord
-L0   false 0       0     -1
-L1   false 0       0     -1
-L2   false 0       0     -1
+Cycle 1
+  ISSUE: L.D F1 0 -> L0
+  Registers: F1=L0  F2=  F3=  F4= ...
+  Memory: Mem[0]=10  Mem[1]=11  Mem[2]=5  Mem[3]=6
 
-Registers
-F1=10  F2=  F3=  F4=  F5=  F6=  F7=  F8=  F9=  F10=  F11=  F12=  F13=  F14=  F15=  F16=
-
-Data Memory
-Mem[0]=10  Mem[1]=11  Mem[2]=5  Mem[3]=6
+Cycle 2
+  EXECUTE: L0 load Mem[0] (0 cycles left)
+  WRITE-BACK: L0 broadcasts 10
+  Registers: F1=10  F2=  F3=  F4= ...
+  Memory: Mem[0]=10  Mem[1]=11  Mem[2]=5  Mem[3]=6
 
 Finished
 ```
@@ -221,6 +226,22 @@ printf '2\n2\n1\n1\n1\n1\n1\n1\nBAD F1 0\nL.D F17 0\nL.D F1 101\nL.D F1 0\n' | j
 ```
 
 Result: passed. The simulator skips the invalid lines, runs the valid `L.D F1 0`, and finishes with `F1 = 10`.
+
+Runtime logical-validation test:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 10\nADD.D F2 F3 F4\nL.D F1 0\n' | java -cp src Main
+```
+
+Result: passed. The simulator rejects the uninitialized memory load and the arithmetic instruction that reads uninitialized registers, then runs the valid load.
+
+Runtime store/load ordering test:
+
+```bash
+printf '2\n2\n1\n2\n1\n1\n1\n1\nL.D F1 0\nS.D F1 5\nL.D F2 5\n' | java -cp src Main
+```
+
+Result: passed. The trace shows `L.D F2 5` waiting until the older `S.D F1 5` commits, then loading the stored value.
 
 ## Known Issues
 

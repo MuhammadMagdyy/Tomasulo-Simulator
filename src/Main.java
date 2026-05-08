@@ -109,28 +109,74 @@ public class Main {
         }
     }
 
-    private static void addInstruction(Tomasulo Tom, String[] instruction, String latency, int lineNumber) {
+    private static int registerIndex(String register) {
+        return Integer.parseInt(register.substring(1)) - 1;
+    }
+
+    private static String formatInstruction(String[] instruction) {
+        if (instruction[0].equals("L.D") || instruction[0].equals("S.D")) {
+            return instruction[0] + " " + instruction[1] + " " + instruction[2];
+        }
+        return instruction[0] + " " + instruction[1] + " " + instruction[2] + " " + instruction[3];
+    }
+
+    private static void trace(Tomasulo Tom, String event) {
+        Tom.cycleEvents.add(event);
+    }
+
+    private static String dependencies(String first, String second) {
+        String deps = ((hasValue(first) ? first : "") + " " + (hasValue(second) ? second : "")).trim();
+        return deps.isEmpty() ? "operands" : deps;
+    }
+
+    private static boolean addInstruction(Tomasulo Tom, String[] instruction, String latency, int lineNumber,
+                                          boolean[] knownRegisters, boolean[] knownMemory) {
         String op = instruction[0];
 
         if (op.equals("L.D") || op.equals("S.D")) {
             if (instruction.length != 3 || !isRegister(instruction[1]) || !isMemoryAddress(instruction[2])) {
                 System.out.println("Skipping invalid instruction on line " + lineNumber + ": expected " + op + " F1..F16 0..100");
-                return;
+                return false;
+            }
+
+            int address = Integer.parseInt(instruction[2]);
+            int register = registerIndex(instruction[1]);
+            if (op.equals("L.D")) {
+                if (!knownMemory[address]) {
+                    System.out.println("Skipping invalid instruction on line " + lineNumber + ": memory address " + address + " is uninitialized");
+                    return false;
+                }
+                knownRegisters[register] = true;
+            } else {
+                if (!knownRegisters[register]) {
+                    System.out.println("Skipping invalid instruction on line " + lineNumber + ": source register " + instruction[1] + " has no value or earlier producer");
+                    return false;
+                }
+                knownMemory[address] = true;
             }
             Tom.InstructionQueue.add(new String[]{op, instruction[1], instruction[2], " ", latency});
-            return;
+            return true;
         }
 
         if (op.equals("ADD.D") || op.equals("SUB.D") || op.equals("MUL.D") || op.equals("DIV.D")) {
             if (instruction.length != 4 || !isRegister(instruction[1]) || !isRegister(instruction[2]) || !isRegister(instruction[3])) {
                 System.out.println("Skipping invalid instruction on line " + lineNumber + ": expected " + op + " F1..F16 F1..F16 F1..F16");
-                return;
+                return false;
             }
+
+            int source1 = registerIndex(instruction[2]);
+            int source2 = registerIndex(instruction[3]);
+            if (!knownRegisters[source1] || !knownRegisters[source2]) {
+                System.out.println("Skipping invalid instruction on line " + lineNumber + ": arithmetic source registers must be initialized or produced earlier");
+                return false;
+            }
+            knownRegisters[registerIndex(instruction[1])] = true;
             Tom.InstructionQueue.add(new String[]{op, instruction[1], instruction[2], instruction[3], latency});
-            return;
+            return true;
         }
 
         System.out.println("Skipping invalid instruction on line " + lineNumber + ": unsupported operation " + op);
+        return false;
     }
 
     // -----------------------------------
@@ -163,9 +209,14 @@ public class Main {
 
 //         System.out.print(insLine);
 
-         String Lines [] = insLine.split("\n");
+	         String Lines [] = insLine.split("\n");
 
              int instructionLineNumber = 0;
+             boolean[] knownRegisters = new boolean[16];
+             boolean[] knownMemory = new boolean[101];
+             for (int i = 0; i < Tom.dataMemory.length; i++) {
+                 knownMemory[i] = Tom.dataMemory[i] != null;
+             }
 	         for(int i = 0; i < Lines.length; i++) {
 
 	             if (Lines[i].isEmpty()) {
@@ -182,19 +233,19 @@ public class Main {
 //             System.out.println(instruction[1]);
 //             System.out.println(instruction[2]);
               if (instruction[0].equals("L.D")) {
-                  addInstruction(Tom, instruction, loadCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, loadCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else if (instruction[0].equals("S.D")) {
-                  addInstruction(Tom, instruction, storeCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, storeCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else if (instruction[0].equals("ADD.D")) {
-                  addInstruction(Tom, instruction, addCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, addCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else if (instruction[0].equals("SUB.D")) {
-                  addInstruction(Tom, instruction, subCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, subCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else if (instruction[0].equals("MUL.D")) {
-                  addInstruction(Tom, instruction, mulCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, mulCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else if (instruction[0].equals("DIV.D")) {
-                  addInstruction(Tom, instruction, divCycles, instructionLineNumber);
+                  addInstruction(Tom, instruction, divCycles, instructionLineNumber, knownRegisters, knownMemory);
               } else {
-                  addInstruction(Tom, instruction, "", instructionLineNumber);
+                  addInstruction(Tom, instruction, "", instructionLineNumber, knownRegisters, knownMemory);
               }
 
          }
@@ -264,6 +315,7 @@ public class Main {
 
                     prepareReservationSlot(Tom.addSubReservation[i], "ADD");
                     Tom.addSubReservation[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> A" + i);
 
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
@@ -347,6 +399,7 @@ public class Main {
 
                     prepareReservationSlot(Tom.addSubReservation[i], "SUB");
                     Tom.addSubReservation[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> A" + i);
                     /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -423,6 +476,7 @@ public class Main {
 
                     prepareReservationSlot(Tom.mulDivReservation[i], "MUL");
                     Tom.mulDivReservation[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> M" + i);
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -501,6 +555,7 @@ public class Main {
 
                     prepareReservationSlot(Tom.mulDivReservation[i], "DIV");
                     Tom.mulDivReservation[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> M" + i);
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -581,6 +636,7 @@ public class Main {
 
                     prepareLoadBuffer(Tom.loadBuffer[i]);
                     Tom.loadBuffer[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> L" + i);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -632,6 +688,7 @@ public class Main {
 
                     prepareStoreBuffer(Tom.storeBuffer[i]);
                     Tom.storeBuffer[i].issueOrder = Tom.nextIssueOrder++;
+                    trace(Tom, "ISSUE: " + formatInstruction(Tom.InstructionQueue.get(0)) + " -> S" + i);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -693,7 +750,11 @@ public class Main {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
- if (removed ) Tom.InstructionQueue.remove(0);
+	 if (removed ) {
+         Tom.InstructionQueue.remove(0);
+     } else {
+         trace(Tom, "STALL: no station/buffer available for " + formatInstruction(Tom.InstructionQueue.get(0)));
+     }
 
 
 
@@ -709,11 +770,18 @@ public class Main {
 
             if(Tom.loadBuffer[i].busy){
 
-               if(!Tom.loadBuffer[i].JustAdded) {
-                   Tom.loadBuffer[i].remainingCycles--;
-               }
-               else{
-                   Tom.loadBuffer[i].JustAdded=false;
+	               if(!Tom.loadBuffer[i].JustAdded) {
+                       if (hasOlderStorePending(Tom, Tom.loadBuffer[i].address, Tom.loadBuffer[i].issueOrder)) {
+                           trace(Tom, "WAIT: L" + i + " waits for older store to Mem[" + Tom.loadBuffer[i].address + "]");
+                       } else if (Tom.loadBuffer[i].remainingCycles > 0) {
+	                       Tom.loadBuffer[i].remainingCycles--;
+                           trace(Tom, "EXECUTE: L" + i + " load Mem[" + Tom.loadBuffer[i].address + "] (" + Tom.loadBuffer[i].remainingCycles + " cycles left)");
+                       } else {
+                           trace(Tom, "READY: L" + i + " waits for write-back bus");
+                       }
+	               }
+	               else{
+	                   Tom.loadBuffer[i].JustAdded=false;
                }
             }
 
@@ -727,9 +795,14 @@ public class Main {
                 if(!Tom.storeBuffer[i].JustAdded){
 
 
-                if(hasValue(Tom.storeBuffer[i].V)) {
+                if(hasValue(Tom.storeBuffer[i].V) && Tom.storeBuffer[i].remainingCycles > 0) {
 
                     Tom.storeBuffer[i].remainingCycles--;
+                    trace(Tom, "EXECUTE: S" + i + " store Mem[" + Tom.storeBuffer[i].address + "] (" + Tom.storeBuffer[i].remainingCycles + " cycles left)");
+                } else if (hasValue(Tom.storeBuffer[i].V)) {
+                    trace(Tom, "READY: S" + i + " waits for write-back bus");
+                } else {
+                    trace(Tom, "WAIT: S" + i + " waits for value " + Tom.storeBuffer[i].Q);
                 }
             }
                 else{
@@ -748,10 +821,15 @@ public class Main {
 
                 if(!Tom.mulDivReservation[i].JustAdded){
 
-                    if(hasValue(Tom.mulDivReservation[i].Vj) && hasValue(Tom.mulDivReservation[i].Vk)){
+	                    if(hasValue(Tom.mulDivReservation[i].Vj) && hasValue(Tom.mulDivReservation[i].Vk) && Tom.mulDivReservation[i].remainingCycles > 0){
 
-                        Tom.mulDivReservation[i].remainingCycles--;
-                    }
+	                        Tom.mulDivReservation[i].remainingCycles--;
+                            trace(Tom, "EXECUTE: M" + i + " " + Tom.mulDivReservation[i].op + " (" + Tom.mulDivReservation[i].remainingCycles + " cycles left)");
+	                    } else if (hasValue(Tom.mulDivReservation[i].Vj) && hasValue(Tom.mulDivReservation[i].Vk)) {
+                            trace(Tom, "READY: M" + i + " waits for write-back bus");
+	                    } else {
+                            trace(Tom, "WAIT: M" + i + " waits for " + dependencies(Tom.mulDivReservation[i].Qj, Tom.mulDivReservation[i].Qk));
+	                    }
 
                 }
 
@@ -773,10 +851,15 @@ public class Main {
 
                 if(!Tom.addSubReservation[i].JustAdded){
 
-                    if(hasValue(Tom.addSubReservation[i].Vj) && hasValue(Tom.addSubReservation[i].Vk)){
+	                    if(hasValue(Tom.addSubReservation[i].Vj) && hasValue(Tom.addSubReservation[i].Vk) && Tom.addSubReservation[i].remainingCycles > 0){
 
-                        Tom.addSubReservation[i].remainingCycles--;
-                    }
+	                        Tom.addSubReservation[i].remainingCycles--;
+                            trace(Tom, "EXECUTE: A" + i + " " + Tom.addSubReservation[i].op + " (" + Tom.addSubReservation[i].remainingCycles + " cycles left)");
+	                    } else if (hasValue(Tom.addSubReservation[i].Vj) && hasValue(Tom.addSubReservation[i].Vk)) {
+                            trace(Tom, "READY: A" + i + " waits for write-back bus");
+	                    } else {
+                            trace(Tom, "WAIT: A" + i + " waits for " + dependencies(Tom.addSubReservation[i].Qj, Tom.addSubReservation[i].Qk));
+	                    }
 
                 }
 
@@ -793,6 +876,18 @@ public class Main {
 
 
 
+    }
+
+    private static boolean hasOlderStorePending(Tomasulo Tom, int address, int issueOrder) {
+        for (int i = 0; i < Tom.storeBuffer.length; i++) {
+            if (Tom.storeBuffer[i].busy
+                    && Tom.storeBuffer[i].address == address
+                    && Tom.storeBuffer[i].issueOrder >= 0
+                    && Tom.storeBuffer[i].issueOrder < issueOrder) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
@@ -840,25 +935,25 @@ public class Main {
         String used ="";
 
         for(int i=0;i<Tom.loadBuffer.length;i++){
-            if(Tom.loadBuffer[i].busy && Tom.loadBuffer[i].remainingCycles <= -1) {
+            if(Tom.loadBuffer[i].busy && Tom.loadBuffer[i].remainingCycles <= 0) {
                 used = olderReadyCandidate(Tom, used, "L"+i);
             }
         }
 
         for(int i=0;i<Tom.storeBuffer.length;i++){
-            if(Tom.storeBuffer[i].busy && Tom.storeBuffer[i].remainingCycles <= -1) {
+            if(Tom.storeBuffer[i].busy && Tom.storeBuffer[i].remainingCycles <= 0) {
                 used = olderReadyCandidate(Tom, used, "S"+i);
             }
         }
 
         for(int i=0;i<Tom.addSubReservation.length;i++){
-            if(Tom.addSubReservation[i].busy && Tom.addSubReservation[i].remainingCycles <= -1) {
+            if(Tom.addSubReservation[i].busy && Tom.addSubReservation[i].remainingCycles <= 0) {
                 used = olderReadyCandidate(Tom, used, "A"+i);
             }
         }
 
         for(int i=0;i<Tom.mulDivReservation.length;i++){
-            if(Tom.mulDivReservation[i].busy && Tom.mulDivReservation[i].remainingCycles <= -1) {
+            if(Tom.mulDivReservation[i].busy && Tom.mulDivReservation[i].remainingCycles <= 0) {
                 used = olderReadyCandidate(Tom, used, "M"+i);
             }
         }
@@ -882,6 +977,7 @@ public class Main {
                     String value = Tom.dataMemory[Tom.loadBuffer[i].address];
                     clearLoadBuffer(Tom.loadBuffer[i]);
                     Dis(Tom,"L"+i,value);
+                    trace(Tom, "WRITE-BACK: L" + i + " broadcasts " + value);
 
                 }
 
@@ -905,6 +1001,7 @@ public class Main {
                     }
                     clearReservationSlot(Tom.addSubReservation[i]);
                     Dis(Tom,"A"+i,value);
+                    trace(Tom, "WRITE-BACK: A" + i + " broadcasts " + value);
 
                 }
 
@@ -923,11 +1020,18 @@ public class Main {
                          value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) * Float.valueOf(Tom.mulDivReservation[i].Vk));
                     }
                     else{
-                        value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) / Float.valueOf(Tom.mulDivReservation[i].Vk));
+                        float denominator = Float.valueOf(Tom.mulDivReservation[i].Vk);
+                        if (denominator == 0.0f) {
+                            value = "NaN";
+                            trace(Tom, "ERROR: M" + i + " division by zero; broadcasting NaN");
+                        } else {
+                            value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) / denominator);
+                        }
 
                     }
                     clearReservationSlot(Tom.mulDivReservation[i]);
                     Dis(Tom,"M"+i,value);
+                    trace(Tom, "WRITE-BACK: M" + i + " broadcasts " + value);
 
                 }
 
@@ -942,8 +1046,11 @@ public class Main {
                 String s="S"+i;
 
                 if(s.equals(used)){
+                    String value = Tom.storeBuffer[i].V;
+                    int address = Tom.storeBuffer[i].address;
                     Tom.dataMemory[Tom.storeBuffer[i].address]=Tom.storeBuffer[i].V;
                     clearStoreBuffer(Tom.storeBuffer[i]);
+                    trace(Tom, "COMMIT: S" + i + " stores " + value + " into Mem[" + address + "]");
 
 
                 }
@@ -999,59 +1106,35 @@ public class Main {
     }
     public static void printTom(Tomasulo Tom){
 
-        System.out.println();
-        System.out.println("=== Cycle " + Tom.cycle + " ===");
-
-        System.out.println("Load Buffers");
-        System.out.printf("%-4s %-5s %-7s %-5s %-5s%n", "Tag", "Busy", "Addr", "Left", "Ord");
-        for(int i=0;i<Tom.loadBuffer.length;i++){
-            System.out.printf("%-4s %-5s %-7d %-5d %-5d%n", "L"+i, Tom.loadBuffer[i].busy, Tom.loadBuffer[i].address,
-                    Tom.loadBuffer[i].remainingCycles, Tom.loadBuffer[i].issueOrder);
+        System.out.println("Cycle " + Tom.cycle);
+        if (Tom.cycleEvents.isEmpty()) {
+            System.out.println("  No state changes.");
+        } else {
+            for (String event : Tom.cycleEvents) {
+                System.out.println("  " + event);
+            }
         }
 
-        System.out.println("Store Buffers");
-        System.out.printf("%-4s %-5s %-7s %-8s %-8s %-5s %-5s%n", "Tag", "Busy", "Addr", "V", "Q", "Left", "Ord");
-        for(int i=0;i<Tom.storeBuffer.length;i++){
-            System.out.printf("%-4s %-5s %-7d %-8s %-8s %-5d %-5d%n", "S"+i, Tom.storeBuffer[i].busy, Tom.storeBuffer[i].address,
-                    Tom.storeBuffer[i].V, Tom.storeBuffer[i].Q, Tom.storeBuffer[i].remainingCycles, Tom.storeBuffer[i].issueOrder);
-        }
-
-        System.out.println("Add/Sub Reservation Stations");
-        System.out.printf("%-4s %-5s %-5s %-8s %-8s %-8s %-8s %-5s %-5s%n", "Tag", "Busy", "Op", "Vj", "Vk", "Qj", "Qk", "Left", "Ord");
-        for(int i=0;i<Tom.addSubReservation.length;i++){
-            System.out.printf("%-4s %-5s %-5s %-8s %-8s %-8s %-8s %-5d %-5d%n", "A"+i, Tom.addSubReservation[i].busy,
-                    Tom.addSubReservation[i].op, Tom.addSubReservation[i].Vj, Tom.addSubReservation[i].Vk,
-                    Tom.addSubReservation[i].Qj, Tom.addSubReservation[i].Qk, Tom.addSubReservation[i].remainingCycles,
-                    Tom.addSubReservation[i].issueOrder);
-        }
-
-        System.out.println("Mul/Div Reservation Stations");
-        System.out.printf("%-4s %-5s %-5s %-8s %-8s %-8s %-8s %-5s %-5s%n", "Tag", "Busy", "Op", "Vj", "Vk", "Qj", "Qk", "Left", "Ord");
-        for(int i=0;i<Tom.mulDivReservation.length;i++){
-            System.out.printf("%-4s %-5s %-5s %-8s %-8s %-8s %-8s %-5d %-5d%n", "M"+i, Tom.mulDivReservation[i].busy,
-                    Tom.mulDivReservation[i].op, Tom.mulDivReservation[i].Vj, Tom.mulDivReservation[i].Vk,
-                    Tom.mulDivReservation[i].Qj, Tom.mulDivReservation[i].Qk, Tom.mulDivReservation[i].remainingCycles,
-                    Tom.mulDivReservation[i].issueOrder);
-        }
-
-        System.out.println("Registers");
+        System.out.print("  Registers: ");
         for(int i=0;i<Tom.regs.length;i++){
             System.out.print(Tom.regs[i].name + "=" + Tom.regs[i].value + (i == Tom.regs.length - 1 ? "" : "  "));
         }
         System.out.println();
 
-        System.out.println("Data Memory");
+        System.out.print("  Memory: ");
         for(int i=0;i<Tom.dataMemory.length;i++){
             if (Tom.dataMemory[i] != null) {
                 System.out.print("Mem[" + i + "]=" + Tom.dataMemory[i] + "  ");
             }
         }
         System.out.println();
+        System.out.println();
     }
 
     public static void simulator(Tomasulo Tom){
 
         while(Tom.cycle < MAX_CYCLES) {
+            Tom.cycleEvents.clear();
             if(!Tom.InstructionQueue.isEmpty() || FirstE  ) {
                 Issue(Tom);
                 FirstE=false;

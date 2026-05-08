@@ -13,6 +13,7 @@ public class Tomasulo {
 	LoadBufferSlot loadBuffer[];
 	StoreBufferSlot storeBuffer[];
 	 ArrayList<String[]> InstructionQueue = new ArrayList<String[]>();
+	 ArrayList<String> cycleEvents = new ArrayList<String>();
 
 	String dataMemory[] = new String[101];
 
