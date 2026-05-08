@@ -43,8 +43,6 @@ ADD.D F3 F1 F2
 - `src/ReservationSlot.java`: add/sub and mul/div reservation station entry
 - `src/LoadBufferSlot.java`: load buffer entry
 - `src/StoreBufferSlot.java`: store buffer entry
-- `src/RegFileEntry.java`: unused register-file entry placeholder
-- `Parser.java`: unused parser placeholder
 
 ## Requirements
 
@@ -56,7 +54,7 @@ No external dependencies are required.
 ## Compile
 
 ```bash
-javac src/*.java Parser.java
+javac src/*.java
 ```
 
 ## Run
@@ -172,7 +170,7 @@ Checked on May 8, 2026.
 Compile test:
 
 ```bash
-javac src/*.java Parser.java
+javac src/*.java
 ```
 
 Result: passed.
@@ -191,25 +189,40 @@ Runtime smoke test 2:
 printf '2\n2\n2\n2\n2\n2\n2\n2\nL.D F1 0\nL.D F2 1\nADD.D F3 F1 F2\n' | java -cp src Main
 ```
 
-Result: the simulator starts, issues instructions, and prints cycle state, but this dependency scenario currently fails with:
+Result: passed. The simulator finishes and writes:
 
 ```text
-java.lang.NumberFormatException: empty String
+F1 = 10
+F2 = 11
+F3 = 21.0
 ```
 
-The exception occurs in `Main.WriteBack` while handling the `ADD.D` result. The project should therefore be treated as a partially working Tomasulo simulator prototype rather than a complete implementation.
+Runtime smoke test 3:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 0\nL.D F2 2\nSUB.D F3 F1 F2\nMUL.D F4 F1 F2\nDIV.D F5 F1 F2\nS.D F3 4\n' | java -cp src Main
+```
+
+Result: passed. The simulator finishes and writes:
+
+```text
+F1 = 10
+F2 = 5
+F3 = 5.0
+F4 = 50.0
+F5 = 2.0
+Mem[4] = 5.0
+```
 
 ## Known Issues
 
-- Some dependency scenarios fail during write-back.
 - There are no automated tests.
 - Most simulation logic is concentrated in `src/Main.java`.
-- `Parser.java` and `src/RegFileEntry.java` are currently unused placeholders.
 - The simulator prints a very large amount of state for each cycle.
+- The simulator is still a simplified educational model, not a complete cycle-accurate CPU implementation.
 
 ## Suggested Next Improvements
 
 - Split issue, execute, and write-back behavior into smaller testable methods.
 - Add automated tests for load, store, arithmetic, and dependency scenarios.
-- Fix add/sub write-back to read values from the add/sub reservation station.
-- Add a maximum-cycle guard for debugging non-terminating programs.
+- Format the cycle output as compact tables.

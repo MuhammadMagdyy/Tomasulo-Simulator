@@ -97,7 +97,7 @@ public static String checkValueType(String address, Register[] reg) {
 		
 		if (reg[i].name.equals(address)) {
 			
-			if(reg[i].type==true) {
+			if(reg[i].type) {
 				return "Value is a number: "+reg[i].value;
 			}
 			return "Address of Register: "+reg[i].value;

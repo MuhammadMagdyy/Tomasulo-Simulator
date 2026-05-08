@@ -6,6 +6,60 @@ public class Main {
  static Boolean First = true;
  static Boolean FirstE = true;
  static Scanner scanner;
+ static final int MAX_CYCLES = 10000;
+
+    private static boolean hasValue(String value) {
+        return value != null && !value.isEmpty();
+    }
+
+    private static void prepareReservationSlot(ReservationSlot slot, String op) {
+        slot.op = op;
+        slot.busy = true;
+        slot.Vj = "";
+        slot.Vk = "";
+        slot.Qj = "";
+        slot.Qk = "";
+        slot.JustAdded = true;
+    }
+
+    private static void clearReservationSlot(ReservationSlot slot) {
+        slot.busy = false;
+        slot.op = "";
+        slot.Vj = "";
+        slot.Vk = "";
+        slot.Qj = "";
+        slot.Qk = "";
+        slot.remainingCycles = 0;
+        slot.JustAdded = true;
+    }
+
+    private static void prepareLoadBuffer(LoadBufferSlot slot) {
+        slot.busy = true;
+        slot.JustAdded = true;
+    }
+
+    private static void clearLoadBuffer(LoadBufferSlot slot) {
+        slot.busy = false;
+        slot.address = 0;
+        slot.remainingCycles = 0;
+        slot.JustAdded = true;
+    }
+
+    private static void prepareStoreBuffer(StoreBufferSlot slot) {
+        slot.busy = true;
+        slot.V = "";
+        slot.Q = "";
+        slot.JustAdded = true;
+    }
+
+    private static void clearStoreBuffer(StoreBufferSlot slot) {
+        slot.busy = false;
+        slot.address = 0;
+        slot.V = "";
+        slot.Q = "";
+        slot.remainingCycles = 0;
+        slot.JustAdded = true;
+    }
 
     // -----------------------------------
     public static void Parser(Tomasulo Tom){
@@ -49,7 +103,7 @@ public class Main {
 //             System.out.println(i);
 //             System.out.println(Lines[i]);
 
-             String instruction [] = Lines[i].split(" ");
+             String instruction [] = Lines[i].split("\\s+");
 //             System.out.println(instruction[0]);
 //             System.out.println(instruction[1]);
 //             System.out.println(instruction[2]);
@@ -111,7 +165,7 @@ public class Main {
 
             if (reg[i].name.equals(address)) {
 
-                if(reg[i].type==true) {
+                if(reg[i].type) {
                     return ""+reg[i].value;
                 }
                 return ""+reg[i].value;
@@ -126,9 +180,13 @@ public class Main {
 
     public static void Issue(Tomasulo Tom)
     {
-        if(First){
-        Parser(Tom);
-        First=false;}
+	        if(First){
+	        Parser(Tom);
+	        First=false;}
+
+            if (Tom.InstructionQueue.isEmpty()) {
+                return;
+            }
 
         boolean removed=true;
 
@@ -143,8 +201,7 @@ public class Main {
 
                 if (!Tom.addSubReservation[i].busy ){
 
-                    Tom.addSubReservation[i].op="ADD";
-                    Tom.addSubReservation[i].busy=true;
+                    prepareReservationSlot(Tom.addSubReservation[i], "ADD");
 
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
@@ -226,8 +283,7 @@ public class Main {
 
                 if (!Tom.addSubReservation[i].busy ){
 
-                    Tom.addSubReservation[i].op="SUB";
-                    Tom.addSubReservation[i].busy=true;
+                    prepareReservationSlot(Tom.addSubReservation[i], "SUB");
                     /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -302,8 +358,7 @@ public class Main {
 
                 if (!Tom.mulDivReservation[i].busy ){
 
-                    Tom.mulDivReservation[i].op="MUL";
-                    Tom.mulDivReservation[i].busy=true;
+                    prepareReservationSlot(Tom.mulDivReservation[i], "MUL");
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -380,8 +435,7 @@ public class Main {
 
                 if (!Tom.mulDivReservation[i].busy ){
 
-                    Tom.mulDivReservation[i].op="DIV";
-                    Tom.mulDivReservation[i].busy=true;
+                    prepareReservationSlot(Tom.mulDivReservation[i], "DIV");
 /////////////////////////////////////////////////////// Vj & Qj ///////////////////////////////////////////////////////
 
                     for (int j = 0; j<Tom.regs.length; j++)
@@ -460,7 +514,7 @@ public class Main {
                // System.out.print(Tom.loadBuffer[i].busy );
                 if (!Tom.loadBuffer[i].busy ){
 
-                    Tom.loadBuffer[i].busy=true;
+                    prepareLoadBuffer(Tom.loadBuffer[i]);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -510,7 +564,7 @@ public class Main {
 
                 if (!Tom.storeBuffer[i].busy ){
 
-                    Tom.storeBuffer[i].busy=true;
+                    prepareStoreBuffer(Tom.storeBuffer[i]);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -606,7 +660,7 @@ public class Main {
                 if(!Tom.storeBuffer[i].JustAdded){
 
 
-                if(Tom.storeBuffer[i].V!="") {
+                if(hasValue(Tom.storeBuffer[i].V)) {
 
                     Tom.storeBuffer[i].remainingCycles--;
                 }
@@ -627,7 +681,7 @@ public class Main {
 
                 if(!Tom.mulDivReservation[i].JustAdded){
 
-                    if(Tom.mulDivReservation[i].Vj!="" && Tom.mulDivReservation[i].Vk!=""){
+                    if(hasValue(Tom.mulDivReservation[i].Vj) && hasValue(Tom.mulDivReservation[i].Vk)){
 
                         Tom.mulDivReservation[i].remainingCycles--;
                     }
@@ -652,7 +706,7 @@ public class Main {
 
                 if(!Tom.addSubReservation[i].JustAdded){
 
-                    if(Tom.addSubReservation[i].Vj!="" && Tom.addSubReservation[i].Vk!=""){
+                    if(hasValue(Tom.addSubReservation[i].Vj) && hasValue(Tom.addSubReservation[i].Vk)){
 
                         Tom.addSubReservation[i].remainingCycles--;
                     }
@@ -842,7 +896,7 @@ return used;
                 if(s.equals(used)){
 
                     String value = Tom.dataMemory[Tom.loadBuffer[i].address];
-                    Tom.loadBuffer[i].busy=false;
+                    clearLoadBuffer(Tom.loadBuffer[i]);
                     Dis(Tom,"L"+i,value);
 
                 }
@@ -860,12 +914,12 @@ return used;
                 if(s.equals(used)){
                     String value;
                     if(Tom.addSubReservation[i].op.equals("ADD")) {
-                         value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) + Float.valueOf(Tom.mulDivReservation[i].Vk));
+                         value = String.valueOf(Float.valueOf(Tom.addSubReservation[i].Vj) + Float.valueOf(Tom.addSubReservation[i].Vk));
                     }
                     else{
-                         value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) - Float.valueOf(Tom.mulDivReservation[i].Vk));
+                         value = String.valueOf(Float.valueOf(Tom.addSubReservation[i].Vj) - Float.valueOf(Tom.addSubReservation[i].Vk));
                     }
-                    Tom.addSubReservation[i].busy=false;
+                    clearReservationSlot(Tom.addSubReservation[i]);
                     Dis(Tom,"A"+i,value);
 
                 }
@@ -888,7 +942,7 @@ return used;
                         value = String.valueOf(Float.valueOf(Tom.mulDivReservation[i].Vj) / Float.valueOf(Tom.mulDivReservation[i].Vk));
 
                     }
-                    Tom.mulDivReservation[i].busy=false;
+                    clearReservationSlot(Tom.mulDivReservation[i]);
                     Dis(Tom,"M"+i,value);
 
                 }
@@ -905,7 +959,7 @@ return used;
 
                 if(s.equals(used)){
                     Tom.dataMemory[Tom.storeBuffer[i].address]=Tom.storeBuffer[i].V;
-                    Tom.storeBuffer[i].busy=false;
+                    clearStoreBuffer(Tom.storeBuffer[i]);
 
 
                 }
@@ -1043,7 +1097,7 @@ System.out.println(" " +
 
     public static void simulator(Tomasulo Tom){
 
-        while(true) {
+        while(Tom.cycle < MAX_CYCLES) {
             if(!Tom.InstructionQueue.isEmpty() || FirstE  ) {
                 Issue(Tom);
                 FirstE=false;
@@ -1057,6 +1111,10 @@ System.out.println(" " +
                 break;
             }
 
+        }
+
+        if (!checkEnd(Tom)) {
+            System.out.println("Stopped after " + MAX_CYCLES + " cycles without finishing.");
         }
 
 

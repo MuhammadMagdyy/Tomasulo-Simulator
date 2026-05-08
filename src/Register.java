@@ -23,7 +23,7 @@ public class Register {
 	public void setValue(String value) {
 		this.value = value;
 	
-		if (value.charAt(0) !='F') {
+		if (value != null && !value.isEmpty() && value.charAt(0) !='F') {
 			this.type = true;
 		}
 		
