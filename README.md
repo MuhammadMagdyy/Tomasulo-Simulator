@@ -124,7 +124,15 @@ javac src/*.java Parser.java
 
 Result: passed.
 
-Runtime smoke test:
+Runtime smoke test 1:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 0\n' | java -cp src Main
+```
+
+Result: passed. The simulator finishes and writes `10` from `Mem[0]` into `F1`.
+
+Runtime smoke test 2:
 
 ```bash
 printf '2\n2\n2\n2\n2\n2\n2\n2\nL.D F1 0\nL.D F2 1\nADD.D F3 F1 F2\n' | java -cp src Main
