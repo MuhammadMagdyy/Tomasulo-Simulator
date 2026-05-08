@@ -101,6 +101,59 @@ You can pipe the sample into the simulator:
 printf '2\n2\n2\n2\n2\n2\n2\n2\nL.D F1 0\nL.D F2 1\nADD.D F3 F1 F2\n' | java -cp src Main
 ```
 
+## Example Output
+
+This smaller input terminates successfully:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 0\n' | java -cp src Main
+```
+
+The full output is long because the simulator prints the load buffers, store buffers, reservation stations, register file, and memory after every cycle. A shortened excerpt looks like this:
+
+```text
+Enter addSub Reservation station size:
+Enter mulDiv Reservation station size:
+Enter load latency:
+Enter store latency:
+Enter add latency:
+Enter sub latency:
+Enter mul latency:
+Enter div latency:
+///////////////////Write code///////////////////
+
+... NEW CYCLE ...
+Cycle num. :1
+Load Reservation Slot num. :0
+Busy :true
+Address :0
+RemainingCycles :1
+
+... NEW CYCLE ...
+Cycle num. :2
+Load Reservation Slot num. :0
+Busy :true
+Address :0
+RemainingCycles :0
+
+... NEW CYCLE ...
+Cycle num. :3
+Load Reservation Slot num. :0
+Busy :false
+Address :0
+RemainingCycles :-1
+
+Reg File :
+Name: F1| Value: 10| used before?: true  Name: F2| Value: | used before?: false ...
+
+Data Mem :
+10  11  5  6  null  null  null ...
+
+Finished
+```
+
+In this run, `L.D F1 0` loads the value at memory address `0`. Since `Mem[0]` is initialized to `10`, the final register file shows `F1` with value `10`.
+
 ## Initial Data Memory
 
 The simulator initializes memory in `src/Main.java`:
