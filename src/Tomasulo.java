@@ -6,6 +6,7 @@ public class Tomasulo {
 	int addSubSize;
 	int mulDivSize;
 	int cycle = 0;
+	int nextIssueOrder = 0;
 
 	ReservationSlot addSubReservation[];
 	ReservationSlot mulDivReservation[] ;

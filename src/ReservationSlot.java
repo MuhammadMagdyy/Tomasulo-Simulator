@@ -7,6 +7,7 @@ public class ReservationSlot {
     String Qj;
     String Qk;
     int remainingCycles;
+    int issueOrder = -1;
 
     boolean JustAdded=true;
 

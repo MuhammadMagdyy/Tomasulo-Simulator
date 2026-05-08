@@ -5,6 +5,7 @@ public class StoreBufferSlot {
     String V;
     String Q;
     int remainingCycles;
+    int issueOrder = -1;
 
     boolean JustAdded=true;
 

@@ -14,6 +14,8 @@ The program models a simplified floating-point processor with:
 
 It advances the simulation cycle by cycle and prints the internal machine state after each cycle.
 
+When more than one unit is ready to write back, the simulator now uses instruction issue order to choose the oldest ready result first.
+
 ## Supported Instructions
 
 The input parser recognizes these instructions:
@@ -77,6 +79,18 @@ The program prompts for:
 
 On macOS/Linux, press `Ctrl+D` after entering the instruction list.
 
+## Input Validation
+
+The simulator validates:
+
+- reservation station sizes: positive integers
+- latencies: non-negative integers
+- registers: `F1` through `F16`
+- memory addresses: `0` through `100`
+- instruction formats and supported operation names
+
+Invalid instruction lines are skipped with a message, and valid instructions continue to run.
+
 ## Sample Input
 
 ```text
@@ -107,7 +121,7 @@ This smaller input terminates successfully:
 printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F1 0\n' | java -cp src Main
 ```
 
-The full output is long because the simulator prints the load buffers, store buffers, reservation stations, register file, and memory after every cycle. A shortened excerpt looks like this:
+The simulator prints compact tables after every cycle. A shortened excerpt from the final cycle looks like this:
 
 ```text
 Enter addSub Reservation station size:
@@ -120,32 +134,18 @@ Enter mul latency:
 Enter div latency:
 ///////////////////Write code///////////////////
 
-... NEW CYCLE ...
-Cycle num. :1
-Load Reservation Slot num. :0
-Busy :true
-Address :0
-RemainingCycles :1
+=== Cycle 3 ===
+Load Buffers
+Tag  Busy  Addr    Left  Ord
+L0   false 0       0     -1
+L1   false 0       0     -1
+L2   false 0       0     -1
 
-... NEW CYCLE ...
-Cycle num. :2
-Load Reservation Slot num. :0
-Busy :true
-Address :0
-RemainingCycles :0
+Registers
+F1=10  F2=  F3=  F4=  F5=  F6=  F7=  F8=  F9=  F10=  F11=  F12=  F13=  F14=  F15=  F16=
 
-... NEW CYCLE ...
-Cycle num. :3
-Load Reservation Slot num. :0
-Busy :false
-Address :0
-RemainingCycles :-1
-
-Reg File :
-Name: F1| Value: 10| used before?: true  Name: F2| Value: | used before?: false ...
-
-Data Mem :
-10  11  5  6  null  null  null ...
+Data Memory
+Mem[0]=10  Mem[1]=11  Mem[2]=5  Mem[3]=6
 
 Finished
 ```
@@ -214,15 +214,22 @@ F5 = 2.0
 Mem[4] = 5.0
 ```
 
+Runtime validation test:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nBAD F1 0\nL.D F17 0\nL.D F1 101\nL.D F1 0\n' | java -cp src Main
+```
+
+Result: passed. The simulator skips the invalid lines, runs the valid `L.D F1 0`, and finishes with `F1 = 10`.
+
 ## Known Issues
 
 - There are no automated tests.
 - Most simulation logic is concentrated in `src/Main.java`.
-- The simulator prints a very large amount of state for each cycle.
 - The simulator is still a simplified educational model, not a complete cycle-accurate CPU implementation.
 
 ## Suggested Next Improvements
 
 - Split issue, execute, and write-back behavior into smaller testable methods.
 - Add automated tests for load, store, arithmetic, and dependency scenarios.
-- Format the cycle output as compact tables.
+- Add configurable memory initialization instead of using only hard-coded memory values.
