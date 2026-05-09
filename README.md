@@ -65,7 +65,7 @@ javac src/*.java
 java -cp src Main
 ```
 
-The program prompts for:
+The program reads one value per line from standard input. The first 8 lines configure the machine:
 
 1. add/sub reservation station size
 2. mul/div reservation station size
@@ -75,9 +75,40 @@ The program prompts for:
 6. sub latency
 7. mul latency
 8. div latency
-9. instruction lines until EOF
 
-On macOS/Linux, press `Ctrl+D` after entering the instruction list.
+Every remaining line is one instruction. On macOS/Linux, press `Ctrl+D` after entering the instruction list.
+
+For example, this input:
+
+```text
+2
+2
+2
+2
+2
+2
+4
+4
+L.D F1 0
+L.D F2 1
+ADD.D F3 F1 F2
+```
+
+means:
+
+- `2`: create 2 add/sub reservation stations.
+- `2`: create 2 mul/div reservation stations.
+- `2`: loads take 2 cycles.
+- `2`: stores take 2 cycles.
+- `2`: adds take 2 cycles.
+- `2`: subtracts take 2 cycles.
+- `4`: multiplies take 4 cycles.
+- `4`: divides take 4 cycles.
+- `L.D F1 0`: load `Mem[0]` into register `F1`.
+- `L.D F2 1`: load `Mem[1]` into register `F2`.
+- `ADD.D F3 F1 F2`: add `F1 + F2` and write the result to `F3`.
+
+The simulator accepts blank lines in the instruction section and ignores them.
 
 ## Input Validation
 
@@ -98,7 +129,7 @@ The simulator also prevents a load from passing an older pending store to the sa
 
 At runtime, division by zero is reported in the trace and the destination receives `NaN` instead of crashing the simulator.
 
-## Sample Input
+## Simple Sample Input
 
 ```text
 2
@@ -118,6 +149,115 @@ You can pipe the sample into the simulator:
 
 ```bash
 printf '2\n2\n2\n2\n2\n2\n2\n2\nL.D F1 0\nL.D F2 1\nADD.D F3 F1 F2\n' | java -cp src Main
+```
+
+This sample uses the hard-coded initial memory values:
+
+- `Mem[0] = 10`
+- `Mem[1] = 11`
+
+Expected final values:
+
+```text
+F1 = 10
+F2 = 11
+F3 = 21.0
+```
+
+## More Complicated Examples
+
+### Example 1: Chained Dependencies, Mixed Units, and Store/Load Ordering
+
+```bash
+printf '3\n2\n2\n2\n2\n2\n4\n4\nL.D F1 0\nL.D F2 1\nL.D F3 2\nL.D F4 3\nADD.D F5 F1 F2\nSUB.D F6 F2 F3\nMUL.D F7 F5 F6\nDIV.D F8 F7 F4\nS.D F8 8\nL.D F9 8\nADD.D F10 F9 F1\n' | java -cp src Main
+```
+
+Input explanation:
+
+- `3`: create 3 add/sub reservation stations, enough to hold several waiting add/sub instructions.
+- `2`: create 2 mul/div reservation stations.
+- `2, 2, 2, 2, 4, 4`: load/store/add/sub take 2 cycles; mul/div take 4 cycles.
+- `L.D F1 0`, `L.D F2 1`, `L.D F3 2`, `L.D F4 3`: load the initialized values `10`, `11`, `5`, and `6`.
+- `ADD.D F5 F1 F2`: computes `10 + 11 = 21`.
+- `SUB.D F6 F2 F3`: computes `11 - 5 = 6`.
+- `MUL.D F7 F5 F6`: waits for both `F5` and `F6`, then computes `21 * 6 = 126`.
+- `DIV.D F8 F7 F4`: waits for `F7`, then computes `126 / 6 = 21`.
+- `S.D F8 8`: stores the computed value into `Mem[8]`.
+- `L.D F9 8`: loads from `Mem[8]`, but waits until the older store to the same address commits.
+- `ADD.D F10 F9 F1`: waits for `F9`, then computes `21 + 10 = 31`.
+
+Expected final values:
+
+```text
+F1 = 10
+F2 = 11
+F3 = 5
+F4 = 6
+F5 = 21.0
+F6 = 6.0
+F7 = 126.0
+F8 = 21.0
+F9 = 21.0
+F10 = 31.0
+Mem[8] = 21.0
+```
+
+This example is useful because it shows several Tomasulo behaviors in one run:
+
+- consumers wait on producer tags such as `A0`, `M0`, or `L0`;
+- independent units can make progress in the same cycle;
+- only one ready result is selected for write-back in a cycle;
+- a load cannot pass an older pending store to the same memory address.
+
+### Example 2: Store a Derived Value and Load It Later
+
+```bash
+printf '2\n2\n1\n2\n1\n1\n2\n2\nL.D F1 0\nL.D F2 2\nSUB.D F3 F1 F2\nS.D F3 6\nL.D F4 6\nMUL.D F5 F4 F2\n' | java -cp src Main
+```
+
+Input explanation:
+
+- `2, 2`: create 2 stations for add/sub and 2 stations for mul/div.
+- `1, 2, 1, 1, 2, 2`: loads take 1 cycle, stores take 2 cycles, add/sub take 1 cycle, mul/div take 2 cycles.
+- `L.D F1 0`: loads `10` from `Mem[0]`.
+- `L.D F2 2`: loads `5` from `Mem[2]`.
+- `SUB.D F3 F1 F2`: computes `10 - 5 = 5`.
+- `S.D F3 6`: stores `5.0` into `Mem[6]`.
+- `L.D F4 6`: reads the value that was just stored.
+- `MUL.D F5 F4 F2`: computes `5.0 * 5 = 25`.
+
+Expected final values:
+
+```text
+F1 = 10
+F2 = 5
+F3 = 5.0
+F4 = 5.0
+F5 = 25.0
+Mem[6] = 5.0
+```
+
+### Example 3: Invalid Lines Are Skipped
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F17 0\nL.D F1 50\nL.D F1 0\nADD.D F2 F1 F3\nL.D F3 1\nADD.D F4 F1 F3\n' | java -cp src Main
+```
+
+Input explanation:
+
+- `L.D F17 0` is skipped because valid registers are only `F1` through `F16`.
+- `L.D F1 50` is skipped because `Mem[50]` is uninitialized.
+- `L.D F1 0` is accepted and loads `10`.
+- `ADD.D F2 F1 F3` is skipped because `F3` has no value or earlier producer at that point.
+- `L.D F3 1` is accepted and loads `11`.
+- `ADD.D F4 F1 F3` is accepted and computes `10 + 11 = 21`.
+
+Expected final values:
+
+```text
+F1 = 10
+F3 = 11
+F4 = 21.0
 ```
 
 ## Example Output
@@ -170,7 +310,7 @@ All other entries in the `dataMemory` array start as `null`.
 
 ## Test Status
 
-Checked on May 8, 2026.
+Checked on May 9, 2026.
 
 Compile test:
 
@@ -242,6 +382,22 @@ printf '2\n2\n1\n2\n1\n1\n1\n1\nL.D F1 0\nS.D F1 5\nL.D F2 5\n' | java -cp src M
 ```
 
 Result: passed. The trace shows `L.D F2 5` waiting until the older `S.D F1 5` commits, then loading the stored value.
+
+Runtime complicated example test:
+
+```bash
+printf '3\n2\n2\n2\n2\n2\n4\n4\nL.D F1 0\nL.D F2 1\nL.D F3 2\nL.D F4 3\nADD.D F5 F1 F2\nSUB.D F6 F2 F3\nMUL.D F7 F5 F6\nDIV.D F8 F7 F4\nS.D F8 8\nL.D F9 8\nADD.D F10 F9 F1\n' | java -cp src Main
+```
+
+Result: passed. The simulator finishes with `F10 = 31.0` and `Mem[8] = 21.0`.
+
+Runtime invalid-line example test:
+
+```bash
+printf '2\n2\n1\n1\n1\n1\n1\n1\nL.D F17 0\nL.D F1 50\nL.D F1 0\nADD.D F2 F1 F3\nL.D F3 1\nADD.D F4 F1 F3\n' | java -cp src Main
+```
+
+Result: passed. The simulator skips the invalid lines and finishes with `F4 = 21.0`.
 
 ## Known Issues
 
